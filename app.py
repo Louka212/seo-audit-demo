@@ -93,6 +93,24 @@ def audit_pdf():
     )
 
 
+@app.post("/audit.json")
+def audit_json_endpoint():
+    url = (request.form.get("url") or "").strip()
+    if not url and request.is_json:
+        body = request.get_json(silent=True) or {}
+        url = (body.get("url") or "").strip()
+    if not _valid_url(url):
+        return {"error": "invalid_url"}, 400
+    log.info("auditing (json) url: %s", url)
+    try:
+        scrape = scrape_site(url)
+        audit = run_audit(scrape)
+    except Exception as e:
+        log.exception("audit (json) pipeline failed for %s", url)
+        return {"error": "audit_failed", "exception": f"{type(e).__name__}: {e}"}, 500
+    return {"audit": audit, "scrape_error": scrape.error}
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY"))}
