@@ -45,10 +45,10 @@ def audit_html():
         if scrape.error:
             log.warning("scrape error for %s: %s", url, scrape.error)
         audit = run_audit(scrape)
-    except Exception:
+    except Exception as e:
         log.exception("audit pipeline failed for %s", url)
         return render_template("index.html",
-                               error="Something went wrong running the audit. Try again in a moment."), 500
+                               error=f"Audit failed: {type(e).__name__}: {e}"), 500
 
     return render_template(
         "result.html",
