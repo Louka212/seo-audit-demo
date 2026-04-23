@@ -59,11 +59,23 @@
     <p class="closing">— {{ audit.closing_line }}</p>
     {% endif %}
 
-    <form action="/audit.pdf" method="post" class="inline-form">
+    <form action="/audit.pdf" method="post" class="inline-form" id="pdf-form">
       <input type="hidden" name="url" value="{{ submitted_url }}">
-      <button type="submit">Download as PDF</button>
+      <input type="hidden" name="audit_json" value="{{ audit | tojson | forceescape }}">
+      <button type="submit" id="pdf-btn">Download as PDF</button>
       <a href="/" class="secondary">Run another</a>
     </form>
+    <script>
+      document.getElementById('pdf-form').addEventListener('submit', function () {
+        var btn = document.getElementById('pdf-btn');
+        btn.disabled = true;
+        btn.textContent = 'Generating PDF…';
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.textContent = 'Download as PDF';
+        }, 8000);
+      });
+    </script>
 
     <footer>
       Built with Claude Opus 4.7 · Anthropic SDK · Flask ·

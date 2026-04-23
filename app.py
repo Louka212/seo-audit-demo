@@ -65,13 +65,24 @@ def audit_pdf():
     if not _valid_url(url):
         return Response("Invalid URL.", status=400)
 
-    log.info("auditing (pdf) url: %s", url)
-    try:
-        scrape = scrape_site(url)
-        audit = run_audit(scrape)
-    except Exception:
-        log.exception("audit (pdf) pipeline failed for %s", url)
-        return Response("Audit failed.", status=500)
+    audit_json = request.form.get("audit_json")
+    if audit_json:
+        import json
+        try:
+            audit = json.loads(audit_json)
+        except (json.JSONDecodeError, TypeError):
+            audit = None
+    else:
+        audit = None
+
+    if audit is None:
+        log.info("auditing (pdf) url: %s", url)
+        try:
+            scrape = scrape_site(url)
+            audit = run_audit(scrape)
+        except Exception:
+            log.exception("audit (pdf) pipeline failed for %s", url)
+            return Response("Audit failed.", status=500)
 
     pdf_bytes = render_pdf(audit)
     slug = re.sub(r"[^a-z0-9]+", "-", (audit.get("business_name_guess") or "site").lower()).strip("-")
