@@ -1,0 +1,125 @@
+"""Render an audit dict to a 1-page PDF via reportlab."""
+from __future__ import annotations
+
+import io
+from datetime import datetime
+
+from reportlab.lib.colors import HexColor
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+
+ACCENT = HexColor("#1E40AF")
+MUTED = HexColor("#64748B")
+CHIP_BG = HexColor("#F1F5F9")
+
+
+def _styles():
+    base = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle("title", parent=base["Heading1"], fontSize=16,
+                                textColor=ACCENT, spaceAfter=2, leading=20),
+        "subtitle": ParagraphStyle("subtitle", parent=base["Normal"], fontSize=9,
+                                   textColor=MUTED, spaceAfter=10),
+        "score": ParagraphStyle("score", parent=base["Heading1"], fontSize=28,
+                                textColor=ACCENT, alignment=0, leading=32, spaceAfter=0),
+        "score_reasoning": ParagraphStyle("score_reasoning", parent=base["Normal"],
+                                          fontSize=9, textColor=MUTED, leading=11,
+                                          spaceAfter=12),
+        "section": ParagraphStyle("section", parent=base["Heading2"], fontSize=11,
+                                  textColor=ACCENT, spaceAfter=6, spaceBefore=6),
+        "item_title": ParagraphStyle("item_title", parent=base["Normal"], fontSize=10,
+                                     fontName="Helvetica-Bold", spaceAfter=1, leading=12),
+        "item_detail": ParagraphStyle("item_detail", parent=base["Normal"], fontSize=9,
+                                      textColor=HexColor("#1F2937"), leading=11,
+                                      spaceAfter=6),
+        "closing": ParagraphStyle("closing", parent=base["Normal"], fontSize=10,
+                                  textColor=ACCENT, leading=13, spaceBefore=10,
+                                  fontName="Helvetica-Oblique"),
+        "footer": ParagraphStyle("footer", parent=base["Normal"], fontSize=7,
+                                 textColor=MUTED, alignment=1, spaceBefore=8),
+    }
+
+
+def _escape(text: str) -> str:
+    return (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def render_pdf(audit: dict) -> bytes:
+    """Return the PDF as bytes."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=0.5 * inch, rightMargin=0.5 * inch,
+        topMargin=0.4 * inch, bottomMargin=0.4 * inch,
+        title=f"SEO Audit — {audit.get('business_name_guess', 'Site')}",
+    )
+    s = _styles()
+    flow = []
+
+    biz_name = _escape(audit.get("business_name_guess", "Your Site"))
+    biz_url = _escape(audit.get("business_url", ""))
+    date_str = datetime.now().strftime("%B %d, %Y")
+
+    flow.append(Paragraph(f"Local SEO Audit — {biz_name}", s["title"]))
+    flow.append(Paragraph(f"{biz_url} · {date_str}", s["subtitle"]))
+
+    # Score block
+    score = audit.get("score", 0)
+    reasoning = _escape(audit.get("score_reasoning", ""))
+    score_table_data = [[
+        Paragraph(f"{score}<font size='12' color='#64748B'>/10</font>", s["score"]),
+        Paragraph(reasoning, s["score_reasoning"]),
+    ]]
+    score_table = Table(score_table_data, colWidths=[1.2 * inch, 6.0 * inch])
+    score_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), CHIP_BG),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    flow.append(score_table)
+    flow.append(Spacer(1, 10))
+
+    # Top findings
+    flow.append(Paragraph("Top Findings", s["section"]))
+    for i, finding in enumerate(audit.get("top_findings", []), start=1):
+        flow.append(Paragraph(
+            f"{i}. {_escape(finding.get('title', ''))}", s["item_title"]))
+        flow.append(Paragraph(_escape(finding.get("detail", "")), s["item_detail"]))
+
+    flow.append(Spacer(1, 4))
+
+    # Action items
+    flow.append(Paragraph("Action Items (ranked by impact-to-effort)", s["section"]))
+    for i, action in enumerate(audit.get("action_items", []), start=1):
+        chips = (
+            f" <font size='7' color='#64748B'>"
+            f"[{_escape(action.get('effort', ''))} · "
+            f"{_escape(action.get('impact', ''))} impact]</font>"
+        )
+        flow.append(Paragraph(
+            f"{i}. {_escape(action.get('title', ''))}{chips}", s["item_title"]))
+        flow.append(Paragraph(_escape(action.get("detail", "")), s["item_detail"]))
+
+    # Closing
+    closing = audit.get("closing_line")
+    if closing:
+        flow.append(Paragraph(f"— {_escape(closing)}", s["closing"]))
+
+    flow.append(Paragraph(
+        "Generated by LoukaBuilds · loukahosn@gmail.com · 786-867-1737",
+        s["footer"]))
+
+    doc.build(flow)
+    return buf.getvalue()

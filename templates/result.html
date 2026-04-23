@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SEO Audit — {{ audit.business_name_guess or "Your Site" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero tight">
+      <div class="eyebrow">Local SEO Audit</div>
+      <h1>{{ audit.business_name_guess or "Your Site" }}</h1>
+      <p class="lede small">
+        <a href="{{ audit.business_url }}" rel="noreferrer">{{ audit.business_url }}</a>
+        · {{ generated_at }}
+      </p>
+    </header>
+
+    {% if scrape_error %}
+    <div class="warn">
+      Heads up: scraping hit a snag ({{ scrape_error }}). The audit below is based on partial data — re-run on the canonical URL for a fuller read.
+    </div>
+    {% endif %}
+
+    <section class="score-card">
+      <div class="score-number">{{ audit.score }}<span>/10</span></div>
+      <div class="score-reason">{{ audit.score_reasoning }}</div>
+    </section>
+
+    <section class="block">
+      <h2>Top findings</h2>
+      <ol class="findings">
+        {% for f in audit.top_findings %}
+        <li>
+          <div class="item-title">{{ f.title }}</div>
+          <div class="item-detail">{{ f.detail }}</div>
+          <span class="chip chip-{{ f.category }}">{{ f.category.replace('_', ' ') }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    <section class="block">
+      <h2>Action items (ranked by impact-to-effort)</h2>
+      <ol class="actions">
+        {% for a in audit.action_items %}
+        <li>
+          <div class="item-title">{{ a.title }}</div>
+          <div class="item-detail">{{ a.detail }}</div>
+          <span class="chip">{{ a.effort }}</span>
+          <span class="chip chip-impact-{{ a.impact }}">{{ a.impact }} impact</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    {% if audit.closing_line %}
+    <p class="closing">— {{ audit.closing_line }}</p>
+    {% endif %}
+
+    <form action="/audit.pdf" method="post" class="inline-form">
+      <input type="hidden" name="url" value="{{ submitted_url }}">
+      <button type="submit">Download as PDF</button>
+      <a href="/" class="secondary">Run another</a>
+    </form>
+
+    <footer>
+      Built with Claude Opus 4.7 · Anthropic SDK · Flask ·
+      <a href="https://www.loukabuilds.com" rel="noreferrer">LoukaBuilds</a>
+    </footer>
+  </main>
+</body>
+</html>

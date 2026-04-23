@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Free Local SEO Audit — LoukaBuilds</title>
+  <meta name="description" content="Paste your business website. Get a 1-page actionable SEO audit in 60 seconds. Free. No login.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <div class="eyebrow">LoukaBuilds · Demo</div>
+      <h1>Free Local SEO Audit</h1>
+      <p class="lede">
+        Paste your business website. I'll pull it apart and send back a 1-page audit with five concrete fixes and an SEO score.
+        Takes about 60 seconds. No login, no email capture.
+      </p>
+    </header>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form action="/audit" method="post" class="card">
+      <label for="url">Business website URL</label>
+      <input id="url" name="url" type="text" placeholder="https://your-business.com" required autofocus>
+      <button type="submit">Run the audit</button>
+      <div class="note">
+        Works best on service businesses with a public website — HVAC, dental, salon, landscaping, restaurants, etc.
+      </div>
+    </form>
+
+    <section class="how">
+      <h2>What you'll get</h2>
+      <ul>
+        <li><strong>An SEO score (1–10)</strong> with a one-sentence reasoning — no arbitrary grades.</li>
+        <li><strong>Top 5 findings</strong> — ranked by impact on local search, not by what's easiest to flag.</li>
+        <li><strong>Top 5 action items</strong> — ordered by impact-to-effort, each tagged with a realistic time estimate.</li>
+        <li><strong>Downloadable PDF</strong> — send it to your marketing person, or keep it as a checklist.</li>
+      </ul>
+    </section>
+
+    <footer>
+      Built with Claude Opus 4.7 · Anthropic SDK · Flask · reportlab ·
+      <a href="https://www.loukabuilds.com" rel="noreferrer">LoukaBuilds</a>
+    </footer>
+  </main>
+</body>
+</html>
