@@ -1,9 +1,11 @@
 """Scrape a website + generate a 1-page local SEO audit via Claude Opus 4.7."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
+import socket
 from dataclasses import dataclass, asdict
 from urllib.parse import urljoin, urlparse
 
@@ -15,6 +17,29 @@ from bs4 import BeautifulSoup
 SCRAPE_TIMEOUT_SECONDS = 15
 USER_AGENT = "Mozilla/5.0 (compatible; LoukaBuildsSEOAudit/1.0)"
 MAX_HTML_BYTES = 750_000  # ~750KB — ignore huge pages (they bust the context anyway)
+
+
+def _is_safe_host(host: str | None) -> tuple[bool, str]:
+    # SSRF defense: refuse hostnames that resolve to private/loopback/link-local/reserved IPs.
+    # Without this, an attacker can submit http://169.254.169.254/ (cloud IMDS) or LAN addresses.
+    if not host:
+        return False, "empty host"
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return False, f"DNS lookup failed: {e}"
+    for info in infos:
+        ip_str = info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False, f"invalid IP {ip_str}"
+        if (
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+        ):
+            return False, f"host resolves to non-public IP {ip_str}"
+    return True, ""
 
 MODEL = "claude-opus-4-7"
 
@@ -189,6 +214,20 @@ def scrape_site(url: str) -> ScrapedSite:
             sitemap_xml_present=None, error="Invalid URL scheme",
         )
 
+    safe, reason = _is_safe_host(parsed.hostname)
+    if not safe:
+        return ScrapedSite(
+            url=url, final_url=None, status_code=None, title=None, meta_description=None,
+            h1s=[], h2s=[], img_count=0, img_with_alt_count=0, internal_link_count=0,
+            external_link_count=0, has_https=parsed.scheme == "https",
+            has_viewport_meta=False, has_canonical=False, canonical_url=None,
+            has_robots_meta_noindex=False, schema_types=[], has_opengraph=False,
+            og_title=None, og_description=None, word_count_estimate=0,
+            phone_numbers_found=[], email_addresses_found=[], social_links=[],
+            html_size_bytes=0, robots_txt_present=None, sitemap_xml_present=None,
+            error=f"Refused: {reason}",
+        )
+
     try:
         resp = requests.get(
             url,
@@ -286,25 +325,28 @@ def scrape_site(url: str) -> ScrapedSite:
     phone_numbers = _extract_phones(text_content)
     email_addresses = _extract_emails(text_content)
 
-    # Best-effort robots.txt and sitemap checks
+    # Best-effort robots.txt and sitemap checks. Re-validate the final host:
+    # a redirect could have moved us to a private IP.
     robots_txt_present: bool | None = None
     sitemap_xml_present: bool | None = None
-    try:
-        robots_resp = requests.head(
-            f"{final_parsed.scheme}://{final_parsed.netloc}/robots.txt",
-            headers={"User-Agent": USER_AGENT}, timeout=5, allow_redirects=True,
-        )
-        robots_txt_present = robots_resp.status_code == 200
-    except requests.RequestException:
-        robots_txt_present = None
-    try:
-        sitemap_resp = requests.head(
-            f"{final_parsed.scheme}://{final_parsed.netloc}/sitemap.xml",
-            headers={"User-Agent": USER_AGENT}, timeout=5, allow_redirects=True,
-        )
-        sitemap_xml_present = sitemap_resp.status_code == 200
-    except requests.RequestException:
-        sitemap_xml_present = None
+    final_safe, _ = _is_safe_host(final_parsed.hostname)
+    if final_safe:
+        try:
+            robots_resp = requests.head(
+                f"{final_parsed.scheme}://{final_parsed.netloc}/robots.txt",
+                headers={"User-Agent": USER_AGENT}, timeout=5, allow_redirects=True,
+            )
+            robots_txt_present = robots_resp.status_code == 200
+        except requests.RequestException:
+            robots_txt_present = None
+        try:
+            sitemap_resp = requests.head(
+                f"{final_parsed.scheme}://{final_parsed.netloc}/sitemap.xml",
+                headers={"User-Agent": USER_AGENT}, timeout=5, allow_redirects=True,
+            )
+            sitemap_xml_present = sitemap_resp.status_code == 200
+        except requests.RequestException:
+            sitemap_xml_present = None
 
     return ScrapedSite(
         url=url,

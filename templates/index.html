@@ -22,14 +22,46 @@
     <div class="error">{{ error }}</div>
     {% endif %}
 
-    <form action="/audit" method="post" class="card">
+    <form id="audit-form" action="/audit" method="post" class="card">
       <label for="url">Business website URL</label>
       <input id="url" name="url" type="text" placeholder="https://your-business.com" required autofocus>
-      <button type="submit">Run the audit</button>
+      <button id="audit-submit" type="submit">Run the audit</button>
+      <div id="audit-progress" class="progress" hidden>
+        <div class="progress-spinner" aria-hidden="true"></div>
+        <div class="progress-text" data-step="0">Fetching the page&hellip;</div>
+        <div class="progress-sub">This usually takes 30–60 seconds. Don't close the tab.</div>
+      </div>
       <div class="note">
         Works best on service businesses with a public website — HVAC, dental, salon, landscaping, restaurants, etc.
       </div>
     </form>
+
+    <script>
+      (function () {
+        var form = document.getElementById('audit-form');
+        var btn = document.getElementById('audit-submit');
+        var prog = document.getElementById('audit-progress');
+        var text = prog.querySelector('.progress-text');
+        var steps = [
+          'Fetching the page…',
+          'Parsing HTML and extracting SEO signals…',
+          'Checking robots.txt and sitemap.xml…',
+          'Asking Claude Opus to review your site…',
+          'Drafting findings and action items…',
+          'Almost there — finalizing the audit…'
+        ];
+        form.addEventListener('submit', function () {
+          btn.disabled = true;
+          btn.textContent = 'Running audit…';
+          prog.hidden = false;
+          var i = 0;
+          setInterval(function () {
+            i = Math.min(i + 1, steps.length - 1);
+            text.textContent = steps[i];
+          }, 7000);
+        });
+      })();
+    </script>
 
     <section class="how">
       <h2>What you'll get</h2>

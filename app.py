@@ -1,10 +1,14 @@
 """LoukaBuilds SEO Audit — Flask front-end."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+from collections import defaultdict, deque
 from datetime import datetime
+from threading import Lock
+from time import monotonic
 
 from flask import Flask, Response, render_template, request
 
@@ -13,8 +17,41 @@ from pdf_gen import render_pdf
 
 
 app = Flask(__name__)
+# Cap request bodies. Audit forms are tiny; only the JSON-resubmit path could be larger.
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("seo-audit")
+
+
+# Per-IP sliding-window rate limit. Each audit triggers an Anthropic API call,
+# so an unrate-limited endpoint is a billing exposure.
+RATE_LIMIT_WINDOW_SEC = 60
+RATE_LIMIT_MAX_REQUESTS = 10
+_rate_buckets: dict[str, deque] = defaultdict(deque)
+_rate_lock = Lock()
+
+
+def _client_ip() -> str:
+    # Render terminates TLS at a proxy, so request.remote_addr is the proxy. Trust the
+    # first X-Forwarded-For hop (Render sets it; clients can't override the leftmost entry).
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _rate_limited(ip: str) -> bool:
+    now = monotonic()
+    cutoff = now - RATE_LIMIT_WINDOW_SEC
+    with _rate_lock:
+        bucket = _rate_buckets[ip]
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+            return True
+        bucket.append(now)
+        return False
 
 
 def _valid_url(candidate: str) -> bool:
@@ -34,6 +71,9 @@ def index():
 
 @app.post("/audit")
 def audit_html():
+    if _rate_limited(_client_ip()):
+        return render_template("index.html",
+                               error="You're auditing too quickly. Try again in a minute."), 429
     url = (request.form.get("url") or "").strip()
     if not _valid_url(url):
         return render_template("index.html",
@@ -61,13 +101,14 @@ def audit_html():
 
 @app.post("/audit.pdf")
 def audit_pdf():
+    if _rate_limited(_client_ip()):
+        return Response("Rate limited. Try again in a minute.", status=429)
     url = (request.form.get("url") or "").strip()
     if not _valid_url(url):
         return Response("Invalid URL.", status=400)
 
     audit_json = request.form.get("audit_json")
     if audit_json:
-        import json
         try:
             audit = json.loads(audit_json)
         except (json.JSONDecodeError, TypeError):
@@ -95,6 +136,8 @@ def audit_pdf():
 
 @app.post("/audit.json")
 def audit_json_endpoint():
+    if _rate_limited(_client_ip()):
+        return {"error": "rate_limited"}, 429
     url = (request.form.get("url") or "").strip()
     if not url and request.is_json:
         body = request.get_json(silent=True) or {}
