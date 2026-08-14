@@ -1,4 +1,4 @@
-"""LoukaBuilds SEO Audit — Flask front-end."""
+"""Compound Studio SEO Audit — Flask front-end."""
 from __future__ import annotations
 
 import json

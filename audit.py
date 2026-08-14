@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 
 
 SCRAPE_TIMEOUT_SECONDS = 15
-USER_AGENT = "Mozilla/5.0 (compatible; LoukaBuildsSEOAudit/1.0)"
+USER_AGENT = "Mozilla/5.0 (compatible; CompoundStudioSEOAudit/1.0)"
 MAX_HTML_BYTES = 750_000  # ~750KB — ignore huge pages (they bust the context anyway)
 
 
