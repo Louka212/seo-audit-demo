@@ -1,4 +1,4 @@
-"""Scrape a website + generate a 1-page local SEO audit via Claude Opus 4.7."""
+"""Scrape a website + generate a 1-page local SEO audit via Claude Opus 5."""
 from __future__ import annotations
 
 import ipaddress
@@ -41,10 +41,10 @@ def _is_safe_host(host: str | None) -> tuple[bool, str]:
             return False, f"host resolves to non-public IP {ip_str}"
     return True, ""
 
-MODEL = "claude-opus-4-7"
+MODEL = "claude-opus-5"
 
 # This system prompt is the same every request → cache it.
-# Must exceed Opus 4.7's 4096-token minimum cacheable prefix to actually cache.
+# Well above Opus 5's 512-token minimum cacheable prefix, so it actually caches.
 AUDIT_SYSTEM_PROMPT = """You are a senior local-SEO consultant evaluating small-business websites in the United States. Your audits are read by busy owner-operators (HVAC, dental, salon, restaurant, landscaping, cleaning, etc.) who do NOT have an in-house marketing team and who need concrete, high-leverage action items they can complete — or pay a freelancer to complete — in under 10 hours of work.
 
 AUDIT FRAMEWORK
@@ -89,7 +89,7 @@ You evaluate every site against these categories, in this order of importance fo
 
 OUTPUT RULES
 
-You return a JSON object with this exact shape — no extra fields, no markdown wrapping:
+You return a JSON object with this shape:
 
 {
   "business_url": "<the URL that was audited>",
@@ -130,9 +130,7 @@ CONSTRAINTS
 - If the scraped data is sparse (e.g., single-page site, no schema, minimal HTML), say so in findings honestly — "no schema.org markup detected" is a valid finding, not a limitation of the audit.
 - NEVER recommend paid tools, agency retainers, or anything that requires a vendor relationship. Action items should be things the owner (or a competent freelancer) can do directly.
 - Write for a smart non-expert. "Canonical tag" → fine to use. "SERP volatility" → no.
-- Do not include any markdown formatting inside JSON string values. Plain text only. No bullet points, no ** **, no links.
-
-Return ONLY the JSON object — no preamble, no closing remarks, no markdown fencing."""
+- Do not include any markdown formatting inside JSON string values — they render as plain text in the page and the PDF, so bullet points, ** **, and links would show literally."""
 
 
 @dataclass
@@ -427,7 +425,7 @@ AUDIT_JSON_SCHEMA = {
 
 
 def run_audit(site: ScrapedSite) -> dict:
-    """Call Claude Opus 4.7 with the scraped site data; return the parsed audit JSON."""
+    """Call Claude Opus 5 with the scraped site data; return the parsed audit JSON."""
     client = anthropic.Anthropic()
 
     user_content = (
@@ -435,9 +433,14 @@ def run_audit(site: ScrapedSite) -> dict:
         f"```json\n{json.dumps(asdict(site), indent=2)}\n```"
     )
 
-    response = client.messages.create(
+    response = client.beta.messages.create(
         model=MODEL,
-        max_tokens=8000,
+        # Hard cap on thinking + JSON together; Opus 5 thinks by default, so leave room.
+        max_tokens=16000,
+        # Opus 5's safety classifiers can decline a request (stop_reason "refusal");
+        # fallbacks="default" re-runs it server-side on Anthropic's recommended model.
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
         system=[
             {
                 "type": "text",
@@ -453,6 +456,12 @@ def run_audit(site: ScrapedSite) -> dict:
         messages=[{"role": "user", "content": user_content}],
     )
 
+    if response.stop_reason == "refusal":
+        details = getattr(response, "stop_details", None)
+        category = getattr(details, "category", None)
+        reason = f"refusal, {category}" if category else "refusal"
+        raise RuntimeError(f"Claude declined to audit this site ({reason}).")
+
     text_block = next((b.text for b in response.content if b.type == "text"), None)
     if not text_block:
         raise RuntimeError("Claude returned no text block in audit response.")
@@ -461,6 +470,7 @@ def run_audit(site: ScrapedSite) -> dict:
 
     # Return with usage info — useful for debugging and cost tracking
     audit["_usage"] = {
+        "model": response.model,
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
         "cache_read": getattr(response.usage, "cache_read_input_tokens", 0),
