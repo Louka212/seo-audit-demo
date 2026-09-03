@@ -87,34 +87,15 @@ You evaluate every site against these categories, in this order of importance fo
    - Services/products listed with at least a paragraph each (not just a name)
    - FAQ section addressing local buying objections (pricing, service area, timeline)
 
-OUTPUT RULES
+OUTPUT
 
-You return a JSON object with this shape:
+The response is validated against a JSON schema (business_url, business_name_guess, score, score_reasoning, top_findings, action_items, closing_line). What the schema can't express:
 
-{
-  "business_url": "<the URL that was audited>",
-  "business_name_guess": "<best inference from title tag / H1 / schema, or 'Unknown' if unclear>",
-  "score": <integer 1-10>,
-  "score_reasoning": "<one sentence, plain English — what the score reflects>",
-  "top_findings": [
-    {
-      "title": "<short punchy finding, 4-10 words>",
-      "detail": "<2-3 sentences explaining what's broken/missing/weak and WHY it matters for local search or conversion>",
-      "category": "<one of: local_signals | technical | on_page | trust | content_conversion>"
-    },
-    ... exactly 5 findings total, ordered by IMPACT on local search (highest first)
-  ],
-  "action_items": [
-    {
-      "title": "<short punchy action, 4-10 words>",
-      "detail": "<2-3 sentences on exactly what to do and WHY (tie it to the finding). If it's a copy change, include an example.>",
-      "effort": "<one of: 15min | 1hr | half-day | full-day>",
-      "impact": "<one of: low | medium | high>"
-    },
-    ... exactly 5 action items, ordered by BEST IMPACT-TO-EFFORT RATIO (highest first — so "15min high" beats "full-day high")
-  ],
-  "closing_line": "<one sentence the owner can read last — honest, slightly encouraging, mentions the single highest-leverage fix. Do NOT be sycophantic or salesy.>"
-}
+- business_name_guess: best inference from the title tag, H1 or schema; "Unknown" if unclear.
+- score: an integer from 1 to 10 (rubric below). score_reasoning: one plain-English sentence on what the score reflects.
+- top_findings: exactly 5, ordered by impact on local search, highest first. title is a short finding of 4-10 words; detail is 2-3 sentences on what's broken, missing or weak and why it matters for local search or conversion.
+- action_items: exactly 5, ordered by impact-to-effort ratio, best first — a 15-minute high-impact fix outranks a full-day high-impact one. title is 4-10 words; detail is 2-3 sentences on exactly what to do and why, tied to a finding; for copy changes, include an example.
+- closing_line: one sentence the owner reads last — honest, slightly encouraging, naming the single highest-leverage fix. Not sycophantic, not salesy.
 
 SCORE RUBRIC
 
@@ -126,11 +107,10 @@ SCORE RUBRIC
 
 CONSTRAINTS
 
-- NEVER invent facts not visible in the scraped data (e.g., don't claim "your reviews show X" if no review signal was scraped).
-- If the scraped data is sparse (e.g., single-page site, no schema, minimal HTML), say so in findings honestly — "no schema.org markup detected" is a valid finding, not a limitation of the audit.
-- NEVER recommend paid tools, agency retainers, or anything that requires a vendor relationship. Action items should be things the owner (or a competent freelancer) can do directly.
-- Write for a smart non-expert. "Canonical tag" → fine to use. "SERP volatility" → no.
-- Do not include any markdown formatting inside JSON string values — they render as plain text in the page and the PDF, so bullet points, ** **, and links would show literally."""
+- Only cite what the scraped data shows — if no review signal was scraped, say nothing about reviews. Sparse data (a single-page site, no schema, minimal HTML) is itself a finding: "no schema.org markup detected" is valid, not a limitation of the audit.
+- Recommend only things the owner or a competent freelancer can do directly — no paid tools, agency retainers, or anything that needs a vendor relationship.
+- Write for a smart non-expert: "canonical tag" is fine, "SERP volatility" is not.
+- No markdown inside JSON string values — they render as plain text in the page and the PDF, so bullets, ** ** and links would show literally."""
 
 
 @dataclass
