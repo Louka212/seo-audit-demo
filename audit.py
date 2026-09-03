@@ -189,9 +189,47 @@ def _extract_phones(text: str) -> list[str]:
     return list(found)
 
 
+_EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+_CF_EMAIL_HREF = re.compile(r"/cdn-cgi/l/email-protection#([0-9a-fA-F]+)")
+
+
 def _extract_emails(text: str) -> list[str]:
-    pattern = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-    return list(set(pattern.findall(text or "")))[:5]
+    return list(set(_EMAIL_PATTERN.findall(text or "")))[:5]
+
+
+def _decode_cfemail(encoded: str) -> str | None:
+    """Decode one Cloudflare Email Address Obfuscation payload.
+
+    On proxied zones (obfuscation is on by default) Cloudflare rewrites mailto:
+    links and visible addresses for non-browser user agents into
+    <a href="/cdn-cgi/l/email-protection#HEX"><span data-cfemail="HEX">[email protected]</span></a>.
+    HEX is one XOR key byte followed by every address byte XOR'd with that key.
+    Returns None unless the payload decodes to something shaped like an email.
+    """
+    try:
+        raw = bytes.fromhex(encoded or "")
+    except ValueError:
+        return None
+    if len(raw) < 2:
+        return None
+    key = raw[0]
+    decoded = bytes(b ^ key for b in raw[1:]).decode("utf-8", errors="replace")
+    return decoded if _EMAIL_PATTERN.fullmatch(decoded) else None
+
+
+def _extract_cloudflare_emails(soup: BeautifulSoup) -> list[str]:
+    """Addresses Cloudflare hid behind data-cfemail / email-protection hrefs, deduped, page order."""
+    found: dict[str, None] = {}
+    for tag in soup.find_all(attrs={"data-cfemail": True}):
+        email = _decode_cfemail(tag.get("data-cfemail") or "")
+        if email:
+            found.setdefault(email, None)
+    for a in soup.find_all("a", href=_CF_EMAIL_HREF):
+        m = _CF_EMAIL_HREF.search(a["href"])
+        email = _decode_cfemail(m.group(1)) if m else None
+        if email:
+            found.setdefault(email, None)
+    return list(found)
 
 
 def scrape_site(url: str) -> ScrapedSite:
@@ -314,6 +352,10 @@ def scrape_site(url: str) -> ScrapedSite:
     og_title = _clean(og_title_tag.get("content") if og_title_tag else None, 300)
     og_description = _clean(og_desc_tag.get("content") if og_desc_tag else None, 400)
 
+    # Cloudflare-obfuscated addresses never reach the visible text (it just says
+    # "[email protected]"), so decode them from the markup before the text pass.
+    cloudflare_emails = _extract_cloudflare_emails(soup)
+
     # Strip scripts/styles before counting words
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
@@ -321,7 +363,7 @@ def scrape_site(url: str) -> ScrapedSite:
     word_count = len(text_content.split())
 
     phone_numbers = _extract_phones(text_content)
-    email_addresses = _extract_emails(text_content)
+    email_addresses = list(dict.fromkeys(cloudflare_emails + _extract_emails(text_content)))[:5]
 
     # Best-effort robots.txt and sitemap checks. Re-validate the final host:
     # a redirect could have moved us to a private IP.
